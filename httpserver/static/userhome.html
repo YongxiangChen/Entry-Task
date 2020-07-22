@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>个人主页</title>
+</head>
+<body>
+昵称：<span>{{.}}</span>
+<br>
+<form action="/userhome" method="post">
+    <span>修改昵称</span><input type="text" name="nickname"><input type="submit" name="修改">
+</form>
+<br>
+<span>用户头像：</span>
+<br>
+<form enctype="multipart/form-data" action="/userhome" method="post">
+    <input type="file" name="uploadfile" />
+    <input type="submit" value="提交" />
+</form>
+</body>
+</html>
