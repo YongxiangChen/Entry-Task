@@ -1,6 +1,7 @@
 package server
 
 import (
+	"entrytask1/easypool"
 	"entrytask1/httpserver/conf"
 	"entrytask1/httpserver/rpc"
 	"entrytask1/tcpserver/model"
@@ -13,7 +14,30 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
+
+var pool easypool.Pool
+
+func init() {
+	factory := func() (net.Conn, error) { return net.Dial("tcp", "localhost:8008") }
+	config := &easypool.PoolConfig{
+		InitialCap:  5,
+		MaxCap:      20,
+		MaxIdle:     5,
+		Idletime:    10 * time.Second,
+		MaxLifetime: 10 * time.Minute,
+		Factory:     factory,
+	}
+
+	var err error
+	pool, err = easypool.NewHeapPool(config)
+	if err != nil {
+		log.Printf("err:%v\n", err)
+		return
+	}
+	log.Println("pool success")
+}
 
 type htmlDetail struct {
 	Nickname string
@@ -39,8 +63,12 @@ func login(w http.ResponseWriter, r *http.Request) {
 			Password: r.Form["password"][0],
 		}
 		//从pool中拿连接
-		conn := rpc.GetConn()
-		defer rpc.PutConn(conn)
+		conn, err := pool.Get()
+		if err != nil {
+			log.Printf("err:%v\n", err)
+			return
+		}
+		defer conn.Close()
 		//backend验证用户名和密码，调用rpc服务
 		var auth func(name string, pw string) (model.User, bool)
 		RpcService(conn, "Authenticate", &auth)
@@ -82,13 +110,16 @@ func userhome(w http.ResponseWriter, r *http.Request) {
 		}
 
 		//从pool中拿连接
-		conn := rpc.GetConn()
-		defer rpc.PutConn(conn)
+		conn, err := pool.Get()
+		if err != nil {
+			log.Printf("err:%v\n", err)
+			return
+		}
+		defer conn.Close()
 		// 调用Rpc服务，验证tk，确认用户是否登陆
 		var verify func(tk string) (model.User, int)
 		RpcService(conn, "VerifyToken", &verify)
 		user, ok := verify(tk)
-		defer rpc.PutConn(conn)
 		if ok == 1 {
 			//未登陆
 			fmt.Fprintf(w, "unauthorized")
@@ -129,8 +160,11 @@ func userhome(w http.ResponseWriter, r *http.Request) {
 			nickname := r.Form["nickname"][0]
 
 			//从pool中拿连接
-			conn := rpc.GetConn()
-			defer rpc.PutConn(conn)
+			conn, err := pool.Get()
+			if err != nil {
+				log.Printf("err:%v\n", err)
+				return
+			}
 
 			//调用rpc服务
 			var change func(tk string, name string) int
@@ -170,8 +204,12 @@ func userhome(w http.ResponseWriter, r *http.Request) {
 		}
 
 		//从pool中拿连接
-		conn := rpc.GetConn()
-		defer rpc.PutConn(conn)
+		conn, err := pool.Get()
+		if err != nil {
+			log.Printf("err:%v\n", err)
+			return
+		}
+		defer conn.Close()
 		// 调用Rpc服务，验证tk，确认用户是否登陆
 		var verify func(tk string) (model.User, int)
 		RpcService(conn, "VerifyToken", &verify)

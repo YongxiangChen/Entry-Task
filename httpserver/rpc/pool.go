@@ -1,10 +1,13 @@
 package rpc
 
+
+/*
 import (
 	"entrytask1/httpserver/conf"
 	"log"
 	"net"
 )
+
 
 var pool chan net.Conn
 
@@ -33,3 +36,5 @@ func GetConn() net.Conn {
 func PutConn(conn net.Conn) {
 	pool <- conn
 }
+
+ */
