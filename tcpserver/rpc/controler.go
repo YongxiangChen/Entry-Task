@@ -52,6 +52,20 @@ func SetToken(user model.User) (string, error) {
 	return tk, nil
 }
 
+// 修改用户昵称
+func ChangeNickname(tk string, name string) int {
+	client := dao.NewRedisClient()
+	auth := model.Auth{Token: tk}
+	ok, _ := client.GetValueRedis(&auth)
+	if ok != 0 {
+		return ok
+	}
+	user := model.User{Id: auth.Userid, Nickname: name}
+	userDB := dao.NewUserDB()
+	ok, _ = userDB.UserUpdateById(&user)
+	return ok
+}
+
 //验证token，返回user对象
 func VerifyToken(tk string) (model.User, int) {
 	client := dao.NewRedisClient()

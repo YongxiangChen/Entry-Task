@@ -15,6 +15,11 @@ import (
 	"strings"
 )
 
+type htmlDetail struct {
+	Nickname string
+	ImgUrl string
+}
+
 // 登陆
 func login(w http.ResponseWriter, r *http.Request) {
 	HttpLog(r.Method, r.URL.Path, r.RemoteAddr)
@@ -98,14 +103,53 @@ func userhome(w http.ResponseWriter, r *http.Request) {
 		}
 
 		//登陆成功
-		log.Println("User log in: ", user)
+		log.Printf("User log in: %+v", user)
+
+		// 构造待补充的信息
+		var detail = htmlDetail{Nickname: user.Nickname, ImgUrl: user.Username}
+
+		// 解析html
 		var tpath = filepath.Join(conf.StaticPath, "userhome.html")
 		t, _ := template.ParseFiles(tpath)
 		// 补充昵称
-		t.Execute(w, user.Nickname)
+		t.Execute(w, detail)
 	} else {
 		if r.Header["Content-Type"][0] == "application/x-www-form-urlencoded" {
 			// 用户是修改昵称
+			cookie := string(r.Header.Get("Cookie")) //[]unit8 to string
+			var tk string
+			if cookie == "" {
+				return
+			} else {
+				tk = strings.Split(cookie, ":")[1]
+			}
+
+			// 解析参数
+			err := r.ParseForm()
+			if err != nil {
+				log.Fatal("ParseForm ", err)
+			}
+			nickname := r.Form["nickname"][0]
+
+			//调用rpc服务
+			var change func(tk string, name string) int
+			conn, err := RpcService(conf.RpcAddr, "ChangeNickname", &change)
+			if err != nil {
+				log.Println("RPC error：客户端建立连接失败")
+			}
+			ok := change(tk, nickname)
+			conn.Close()
+
+			if ok == 1{
+				log.Println("db error")
+			}
+			if ok == 2 {
+				log.Println("查无此人")
+			}
+
+			//设置重定向
+			w.Header().Set("Location", "/userhome")//跳转地址设置
+			w.WriteHeader(302)
 
 		}
 		// 用户上传图片
@@ -118,7 +162,35 @@ func userhome(w http.ResponseWriter, r *http.Request) {
 		defer file.Close()
 		fmt.Fprintf(w, "%v", handler.Header)
 
-		dirname := filepath.Join(conf.MediaPath, handler.Filename) //路径和文件名拼接
+		cookie := string(r.Header.Get("Cookie")) //[]unit8 to string
+		var tk string
+		if cookie == "" {
+			return
+		} else {
+			tk = strings.Split(cookie, ":")[1]
+		}
+
+		// 调用Rpc服务，验证tk，确认用户是否登陆
+		var verify func(tk string) (model.User, int)
+		conn, err := RpcService(conf.RpcAddr, "VerifyToken", &verify)
+		if err != nil {
+			log.Println("RPC error：客户端建立连接失败")
+		}
+		user, ok := verify(tk)
+		conn.Close()
+		if ok == 1 {
+			//未登陆
+			fmt.Fprintf(w, "unauthorized")
+			return
+		} else if ok == 2 {
+			log.Printf("数据库错误")
+			return
+		}
+
+		format := strings.Split(handler.Filename, ".")
+		filename := user.Username + "." + format[len(format)-1]
+
+		dirname := filepath.Join(conf.MediaPath, filename) //路径和文件名拼接
 		f, err := os.OpenFile(dirname, os.O_WRONLY|os.O_CREATE, 0666) //打开目标文件等待写入，这里后期把文件名换成用户名相关的
 		if err != nil {
 			log.Println(err)
@@ -127,6 +199,28 @@ func userhome(w http.ResponseWriter, r *http.Request) {
 		defer f.Close()
 		io.Copy(f, file)
 	}
+}
+
+// 图片显示
+func showImg(w http.ResponseWriter, r *http.Request) {
+	username := r.URL.Query()["name"][0]
+	// 图片格式
+	imgFormat := [3]string{".img", ".png", ".jpg"}
+	// 判断是哪种格式
+	for _, v := range imgFormat {
+		path := username + v
+		dirname := filepath.Join(conf.MediaPath, path) //路径和文件名拼接
+		_, err := os.Stat(dirname)
+		log.Println(dirname)
+		if err != nil {
+			continue
+		}
+		w.Header().Set("Content-Type", "image")
+		http.ServeFile(w, r, dirname)
+		return
+	}
+	http.NotFound(w, r)
+	log.Println("ssss")
 }
 
 // 主页

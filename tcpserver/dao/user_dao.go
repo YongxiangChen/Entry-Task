@@ -51,7 +51,7 @@ func (u *UserDao) UserQueryById(user *model.User) (int, error) {
 	row := u.DB.QueryRow("select username,password,nickname from users where id=?", user.Id)
 	//row.scan中的字段必须是按照数据库存入字段的顺序，否则报错
 	//传入的是user结构体的成员的地址
-	if err := row.Scan(&user.Id, &user.Password, &user.Nickname); err != nil {
+	if err := row.Scan(&user.Username, &user.Password, &user.Nickname); err != nil {
 		if err == sql.ErrNoRows {
 			//查不到数据
 			return 1, err
@@ -60,6 +60,7 @@ func (u *UserDao) UserQueryById(user *model.User) (int, error) {
 			return 2, err
 		}
 	}
+	log.Printf("%+v", user)
 	return 0, nil
 }
 

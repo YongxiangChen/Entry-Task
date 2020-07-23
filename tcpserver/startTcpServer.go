@@ -18,6 +18,7 @@ func main() {
 	server.Register("Authenticate", rpc.Authenticate)
 	server.Register("SetToken", rpc.SetToken)
 	server.Register("VerifyToken", rpc.VerifyToken)
+	server.Register("ChangeNickname", rpc.ChangeNickname)
 	// 运行服务器
 	server.Run()
 }

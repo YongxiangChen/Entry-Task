@@ -16,6 +16,8 @@ func (p *MyMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/userhome":
 		userhome(w, r)
 		return
+	case "/showImg":
+		showImg(w, r)
 	default:
 		http.NotFound(w, r)
 		return

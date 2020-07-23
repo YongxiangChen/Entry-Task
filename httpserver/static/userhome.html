@@ -5,13 +5,14 @@
     <title>个人主页</title>
 </head>
 <body>
-昵称：<span>{{.}}</span>
+昵称：<span>{{.Nickname}}</span>
 <br>
 <form action="/userhome" method="post">
     <span>修改昵称</span><input type="text" name="nickname"><input type="submit" name="修改">
 </form>
 <br>
 <span>用户头像：</span>
+<img src="/showImg?name={{.ImgUrl}}" style="width: 200px; height: 160px">
 <br>
 <form enctype="multipart/form-data" action="/userhome" method="post">
     <input type="file" name="uploadfile" />
