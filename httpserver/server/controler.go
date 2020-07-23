@@ -211,7 +211,6 @@ func showImg(w http.ResponseWriter, r *http.Request) {
 		path := username + v
 		dirname := filepath.Join(conf.MediaPath, path) //路径和文件名拼接
 		_, err := os.Stat(dirname)
-		log.Println(dirname)
 		if err != nil {
 			continue
 		}
@@ -220,7 +219,6 @@ func showImg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.NotFound(w, r)
-	log.Println("ssss")
 }
 
 // 主页
