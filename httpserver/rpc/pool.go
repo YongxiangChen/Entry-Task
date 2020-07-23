@@ -11,7 +11,7 @@ var pool chan net.Conn
 func init() {
 	pool = make(chan net.Conn, conf.PoolSize)
 	for {
-		if len(pool) > conf.PoolSize {
+		if len(pool) > conf.PoolSize - 1 {
 			log.Println("initialize pool success")
 			break
 		}
@@ -22,18 +22,14 @@ func init() {
 		}
 		pool <- conn
 	}
+	log.Println(len(pool))
 }
 
 func GetConn() net.Conn {
-	select {
-	case conn := <- pool:
-		return conn
-	}
+	conn := <- pool
+	return conn
 }
 
 func PutConn(conn net.Conn) {
-	select {
-	case pool <- conn:
-		return
-	}
+	pool <- conn
 }

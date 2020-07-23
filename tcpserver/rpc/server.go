@@ -44,50 +44,52 @@ func (s *Server) Run() error {
 }
 
 func handelConn(conn net.Conn, s *Server) {
-	session := NewSession(conn)
-	// 从连接中读数据
-	bytedata, err := session.Read()
-	if err != nil {
-		log.Println("连接异常")
-		return
-	}
-	// 把数据解码，成为Rpcdata类型
-	rpcdata, err := Decode(bytedata)
-	if err != nil {
-		log.Println("解码异常")
-		return
-	}
-	// 从映射中找到函数，它是reflect.Value类型
-	fn, ok := s.funcs[rpcdata.Name]
-	if !ok {
-		log.Println("函数找不到")
-		return
-	}
-	// 将入参转换为reflect.Value类型，然后放入[]reflect.Value中
-	inArgs := make([]reflect.Value, 0, len(rpcdata.Args))
-	for _, v := range rpcdata.Args {
-		inArgs = append(inArgs, reflect.ValueOf(v))
-	}
-	// 调用函数，返回的是[]reflect.Value
-	returnData := fn.Call(inArgs)
-	log.Printf("调用函数 %q 成功!", rpcdata.Name)
-	// 构造RpcData的Args成员数据
-	outArgs := make([]interface{}, 0, len(returnData))
-	for _, rv := range returnData {
-		outArgs = append(outArgs, rv.Interface())
-	}
-	// 构造RpcData
-	rspdata := RpcData{Name: rpcdata.Name, Args: outArgs}
-	// 编码
-	bytedata, err = Encode(rspdata)
-	if err != nil {
-		log.Println("编码失败")
-		return
-	}
-	// 发送数据
-	err = session.Write(bytedata)
-	if err != nil {
-		log.Println("数据发送失败")
-		return
+	for {
+		session := NewSession(conn)
+		// 从连接中读数据
+		bytedata, err := session.Read()
+		if err != nil {
+			log.Println("连接异常")
+			return
+		}
+		// 把数据解码，成为Rpcdata类型
+		rpcdata, err := Decode(bytedata)
+		if err != nil {
+			log.Println("解码异常")
+			return
+		}
+		// 从映射中找到函数，它是reflect.Value类型
+		fn, ok := s.funcs[rpcdata.Name]
+		if !ok {
+			log.Println("函数找不到")
+			return
+		}
+		// 将入参转换为reflect.Value类型，然后放入[]reflect.Value中
+		inArgs := make([]reflect.Value, 0, len(rpcdata.Args))
+		for _, v := range rpcdata.Args {
+			inArgs = append(inArgs, reflect.ValueOf(v))
+		}
+		// 调用函数，返回的是[]reflect.Value
+		returnData := fn.Call(inArgs)
+		log.Printf("调用函数 %q 成功!", rpcdata.Name)
+		// 构造RpcData的Args成员数据
+		outArgs := make([]interface{}, 0, len(returnData))
+		for _, rv := range returnData {
+			outArgs = append(outArgs, rv.Interface())
+		}
+		// 构造RpcData
+		rspdata := RpcData{Name: rpcdata.Name, Args: outArgs}
+		// 编码
+		bytedata, err = Encode(rspdata)
+		if err != nil {
+			log.Println("编码失败")
+			return
+		}
+		// 发送数据
+		err = session.Write(bytedata)
+		if err != nil {
+			log.Println("数据发送失败")
+			return
+		}
 	}
 }

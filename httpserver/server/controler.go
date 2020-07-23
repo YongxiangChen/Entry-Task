@@ -38,14 +38,14 @@ func login(w http.ResponseWriter, r *http.Request) {
 			Username: r.Form["username"][0],
 			Password: r.Form["password"][0],
 		}
+		//从pool中拿连接
+		conn := rpc.GetConn()
+		defer rpc.PutConn(conn)
 		//backend验证用户名和密码，调用rpc服务
 		var auth func(name string, pw string) (model.User, bool)
-		conn, err := RpcService(conf.RpcAddr, "Authenticate", &auth)
-		if err != nil {
-			log.Println("RPC error：客户端建立连接失败")
-		}
+		RpcService(conn, "Authenticate", &auth)
 		u, ok := auth(r.Form["username"][0], r.Form["password"][0])
-		conn.Close()
+
 		if ok == false {
 			//做一些登陆不通过的事
 			fmt.Println("登陆失败")
@@ -55,12 +55,8 @@ func login(w http.ResponseWriter, r *http.Request) {
 
 		//调用rpc服务，设置token，存储到redis
 		var settoken func(user model.User) (string, error)
-		conn, err = RpcService(conf.RpcAddr, "SetToken", &settoken)
-		if err != nil {
-			log.Println("RPC error：客户端建立连接失败")
-		}
+		RpcService(conn, "SetToken", &settoken)
 		tk, err := settoken(u)
-		conn.Close()
 		if err != nil {
 			log.Println("连接redis错误")
 		}
@@ -85,14 +81,14 @@ func userhome(w http.ResponseWriter, r *http.Request) {
 			tk = strings.Split(cookie, ":")[1]
 		}
 
+		//从pool中拿连接
+		conn := rpc.GetConn()
+		defer rpc.PutConn(conn)
 		// 调用Rpc服务，验证tk，确认用户是否登陆
 		var verify func(tk string) (model.User, int)
-		conn, err := RpcService(conf.RpcAddr, "VerifyToken", &verify)
-		if err != nil {
-			log.Println("RPC error：客户端建立连接失败")
-		}
+		RpcService(conn, "VerifyToken", &verify)
 		user, ok := verify(tk)
-		conn.Close()
+		defer rpc.PutConn(conn)
 		if ok == 1 {
 			//未登陆
 			fmt.Fprintf(w, "unauthorized")
@@ -113,6 +109,7 @@ func userhome(w http.ResponseWriter, r *http.Request) {
 		t, _ := template.ParseFiles(tpath)
 		// 补充昵称
 		t.Execute(w, detail)
+		return
 	} else {
 		if r.Header["Content-Type"][0] == "application/x-www-form-urlencoded" {
 			// 用户是修改昵称
@@ -131,14 +128,15 @@ func userhome(w http.ResponseWriter, r *http.Request) {
 			}
 			nickname := r.Form["nickname"][0]
 
+			//从pool中拿连接
+			conn := rpc.GetConn()
+			defer rpc.PutConn(conn)
+
 			//调用rpc服务
 			var change func(tk string, name string) int
-			conn, err := RpcService(conf.RpcAddr, "ChangeNickname", &change)
-			if err != nil {
-				log.Println("RPC error：客户端建立连接失败")
-			}
+			RpcService(conn, "ChangeNickname", &change)
 			ok := change(tk, nickname)
-			conn.Close()
+			defer conn.Close()
 
 			if ok == 1{
 				log.Println("db error")
@@ -150,6 +148,7 @@ func userhome(w http.ResponseWriter, r *http.Request) {
 			//设置重定向
 			w.Header().Set("Location", "/userhome")//跳转地址设置
 			w.WriteHeader(302)
+			return
 
 		}
 		// 用户上传图片
@@ -170,14 +169,13 @@ func userhome(w http.ResponseWriter, r *http.Request) {
 			tk = strings.Split(cookie, ":")[1]
 		}
 
+		//从pool中拿连接
+		conn := rpc.GetConn()
+		defer rpc.PutConn(conn)
 		// 调用Rpc服务，验证tk，确认用户是否登陆
 		var verify func(tk string) (model.User, int)
-		conn, err := RpcService(conf.RpcAddr, "VerifyToken", &verify)
-		if err != nil {
-			log.Println("RPC error：客户端建立连接失败")
-		}
+		RpcService(conn, "VerifyToken", &verify)
 		user, ok := verify(tk)
-		conn.Close()
 		if ok == 1 {
 			//未登陆
 			fmt.Fprintf(w, "unauthorized")
@@ -232,16 +230,10 @@ func HttpLog(method string, path string, addr string) {
 }
 
 // 调用rpc的服务
-func RpcService(addr string, funcname string, fpoint interface{}) (net.Conn, error) {
-	// 创建客户端连接
-	conn, err := net.Dial("tcp", addr)
-	if err != nil {
-		return conn, err
-	}
+func RpcService(conn net.Conn, funcname string, fpoint interface{}) {
 	// 创客户端
 	client := rpc.NewClient(conn)
 	// 定义函数调用原型
 	// 客户端调用rpc
 	client.RpcCall(funcname, fpoint)
-	return conn, nil
 }
