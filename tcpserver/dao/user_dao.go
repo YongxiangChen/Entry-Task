@@ -6,9 +6,24 @@ import (
 	"entrytask1/tcpserver/model"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
-	"time"
+	"log"
 )
 
+var db *sql.DB
+
+func init() {
+	// 初始化mysql连接池
+	conn := fmt.Sprintf("%s:%s@%s(%s:%d)/%s", conf.USERNAME, conf.PASSWORD,
+		conf.NETWORK, conf.SERVER, conf.PORT, conf.DATABASE)
+	var err error
+	db, err = sql.Open("mysql", conn)
+	if err != nil {
+		log.Fatal("connection to mysql failed:", err)
+	}
+	db.SetMaxOpenConns(3000)
+	db.SetMaxIdleConns(2000)
+	db.Ping()
+}
 
 type UserDao struct {
 	DB *sql.DB
@@ -17,20 +32,7 @@ type UserDao struct {
 
 // 新建连接
 func NewUserDB() UserDao {
-	conn := fmt.Sprintf("%s:%s@%s(%s:%d)/%s", conf.USERNAME, conf.PASSWORD,
-		conf.NETWORK, conf.SERVER, conf.PORT, conf.DATABASE)
-	DB, err := sql.Open("mysql", conn)
-	if err != nil {
-		fmt.Println("connection to mysql failed:", err)
-		return UserDao{}
-	}
-
-	DB.SetConnMaxLifetime(100*time.Second)  //最大连接周期，超时的连接就close
-	DB.SetMaxOpenConns(100) //最大连接数
-
-
-	// 转成UserDao类型，可以使用其方法
-	UserDB := UserDao{DB}
+	UserDB := UserDao{db}
 
 	return UserDB
 }

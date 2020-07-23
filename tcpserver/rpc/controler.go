@@ -15,7 +15,6 @@ func Authenticate(username string, password string) (model.User, bool) {
 	//先根据用户名查出有无用户
 	var user = &model.User{Username: username}
 	ok, err := userdb.UserQueryByName(user)
-	defer userdb.DB.Close()
 	if err != nil {
 		if ok == 1 {
 			//运行正常，查无此人
@@ -74,7 +73,6 @@ func VerifyToken(tk string) (model.User, int) {
 	// 根据id查
 	userDB := dao.NewUserDB()
 	ok, err = userDB.UserQueryById(&user)
-	defer userDB.Close()
 	switch ok {
 	case 1:
 		//找不到user，id不匹配
