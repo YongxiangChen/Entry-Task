@@ -2,7 +2,6 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/easypool" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/src/github.com/cespare/xxhash" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/src/github.com/dgryski/go-rendezvous" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/src/github.com/garyburd/redigo" vcs="Git" />

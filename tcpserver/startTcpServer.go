@@ -6,6 +6,10 @@ import (
 	"entrytask1/tcpserver/rpc"
 )
 
+func number() string {
+	return "hello"
+}
+
 func main() {
 	// 注册结构体
 	gob.Register(model.User{})
@@ -19,6 +23,7 @@ func main() {
 	server.Register("SetToken", rpc.SetToken)
 	server.Register("VerifyToken", rpc.VerifyToken)
 	server.Register("ChangeNickname", rpc.ChangeNickname)
+	server.Register("number", number)
 	// 运行服务器
 	server.Run()
 }

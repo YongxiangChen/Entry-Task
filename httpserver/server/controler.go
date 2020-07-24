@@ -22,9 +22,9 @@ var pool easypool.Pool
 func init() {
 	factory := func() (net.Conn, error) { return net.Dial("tcp", "localhost:8008") }
 	config := &easypool.PoolConfig{
-		InitialCap:  5,
-		MaxCap:      20,
-		MaxIdle:     5,
+		InitialCap:  200,
+		MaxCap:      500,
+		MaxIdle:     200,
 		Idletime:    10 * time.Second,
 		MaxLifetime: 10 * time.Minute,
 		Factory:     factory,
@@ -259,7 +259,11 @@ func showImg(w http.ResponseWriter, r *http.Request) {
 
 // 主页
 func index(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, "欢迎来到，用户管理系统")
+	conn, _ := pool.Get()
+	var s func() string
+	RpcService(conn, "number", &s)
+	var i = s()
+	fmt.Fprintf(w, i)
 }
 
 // 打印格式
