@@ -1,31 +1,61 @@
 package dao
 
 import (
-	"context"
 	"entrytask1/tcpserver/model"
-	"github.com/go-redis/redis/v8"
+	redigo "github.com/gomodule/redigo/redis"
 	"strconv"
 	"time"
 )
+var RedisClient *redigo.Pool
 
-type AuthRedis struct {
-	*redis.Client
+func init() {
+	var (
+		addr = "127.0.0.1:6379"
+		password = ""
+	)
+	RedisClient = PoolInitRedis(addr, password)
 }
 
-var ctx = context.Background()
+// redis pool
+func PoolInitRedis(server string, password string) *redigo.Pool {
+	return &redigo.Pool{
+		MaxIdle:     300,//空闲数
+		IdleTimeout: 240 * time.Second,
+		MaxActive:   1000,//最大数
+		Dial: func() (redigo.Conn, error) {
+			c, err := redigo.Dial("tcp", server)
+			if err != nil {
+				return nil, err
+			}
+			if password != "" {
+				if _, err := c.Do("AUTH", password); err != nil {
+					c.Close()
+					return nil, err
+				}
+			}
+			return c, err
+		},
+		TestOnBorrow: func(c redigo.Conn, t time.Time) error {
+			_, err := c.Do("PING")
+			return err
+		},
+	}
+}
+
+
+type AuthRedis struct {
+	Pool *redigo.Pool
+}
 
 func NewRedisClient() AuthRedis {
-	rdb := redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
-		Password: "",
-		DB: 0,
-	})
-	return AuthRedis{rdb}
+	return AuthRedis{RedisClient}
 }
 
 func (client AuthRedis) SetValueRedis(auth *model.Auth) error {
-	//设置键的过期时间为2个小时
-	err := client.SetNX(ctx, auth.Token, auth.Userid, 2*time.Hour).Err()
+	rc := client.Pool.Get()
+	defer rc.Close()
+	//设置键的过期时间为1个小时
+	_, err := rc.Do("Set", auth.Token, auth.Userid, "EX", "3600")
 	if err != nil {
 		return err
 	}
@@ -33,13 +63,12 @@ func (client AuthRedis) SetValueRedis(auth *model.Auth) error {
 }
 
 func (client AuthRedis) GetValueRedis(auth *model.Auth) (int, error) {
-	//返回0是正常，返回1是连接redis错误， 返回2是查不到键
-	val, err := client.Get(ctx, auth.Token).Result()
+	rc := client.Pool.Get()
+	defer rc.Close()
+	//返回0是正常，返回1是错误
+	val, err := redigo.String(rc.Do("Get", auth.Userid))
 	if err != nil {
 		return 1, err
-	}
-	if err == redis.Nil {
-		return 2, err
 	}
 	//找到了健值，赋值给auth结构体
 	auth.Userid, _ = strconv.Atoi(val)

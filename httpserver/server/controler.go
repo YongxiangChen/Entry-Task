@@ -348,7 +348,37 @@ func showImg(w http.ResponseWriter, r *http.Request) {
 
 // 主页
 func index(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, "hello")
+	//fmt.Fprint(w, "hello")
+	//从pool中拿连接
+	conn, err := pool.Get()
+	if err != nil {
+		log.Printf("err:%v\n", err)
+		return
+	}
+
+	reqData := make(map[string]string)
+	reqData["userid"] = "1"
+	reqData["username"] = "123456789"
+	rspData, err := RpcService(conn, "SetToken", reqData)
+	if err != nil {
+		if _, ok := err.(net.Error); ok {
+			// 直接关闭conn，不放回pool
+			log.Println("invaild conn")
+			conn.(*easypool.PoolConn).MarkUnusable()
+			conn.Close()
+		} else {
+			//做一些登陆不通过的事
+			log.Println("登陆失败")
+			fmt.Fprint(w, "登陆失败")
+			conn.Close()
+			return
+		}
+	}
+
+	// cookie设置token
+	tk := rspData["token"]
+	fmt.Fprint(w, tk)
+	conn.Close()
 }
 
 // 打印格式

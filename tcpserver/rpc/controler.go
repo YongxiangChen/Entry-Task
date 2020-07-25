@@ -59,7 +59,6 @@ func SetToken(reqData map[string]string) map[string]string {
 		Userid: userid,
 	}
 	client := dao.NewRedisClient()
-	defer client.Close()
 	client.SetValueRedis(&auth)
 
 	rspData := make(map[string]string)
@@ -93,7 +92,6 @@ func VerifyToken(reqData map[string]string) map[string]string {
 	client := dao.NewRedisClient()
 	auth := model.Auth{Token: reqData["token"]}
 	ok, err := client.GetValueRedis(&auth)
-	defer client.Close()
 	rspData := make(map[string]string)
 	switch ok {
 	case 1:
