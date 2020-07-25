@@ -4,7 +4,6 @@ import (
 	"entrytask1/easypool"
 	"entrytask1/httpserver/conf"
 	"entrytask1/httpserver/rpc"
-	"entrytask1/tcpserver/model"
 	"fmt"
 	"html/template"
 	"io"
@@ -22,9 +21,9 @@ var pool easypool.Pool
 func init() {
 	factory := func() (net.Conn, error) { return net.Dial("tcp", "localhost:8008") }
 	config := &easypool.PoolConfig{
-		InitialCap:  200,
-		MaxCap:      500,
-		MaxIdle:     200,
+		InitialCap:  800,
+		MaxCap:      1500,
+		MaxIdle:     800,
 		Idletime:    10 * time.Second,
 		MaxLifetime: 10 * time.Minute,
 		Factory:     factory,
@@ -57,42 +56,81 @@ func login(w http.ResponseWriter, r *http.Request) {
 			log.Fatal("ParseForm ", err)
 		}
 
-		//构造user结构体
-		u := model.User{
-			Username: r.Form["username"][0],
-			Password: r.Form["password"][0],
-		}
-		//从pool中拿连接
-		conn, err := pool.Get()
-		if err != nil {
-			log.Printf("err:%v\n", err)
-			return
-		}
-		defer conn.Close()
-		//backend验证用户名和密码，调用rpc服务
-		var auth func(name string, pw string) (model.User, bool)
-		RpcService(conn, "Authenticate", &auth)
-		u, ok := auth(r.Form["username"][0], r.Form["password"][0])
-
-		if ok == false {
+		// 用户名和密码不为空？
+		username := r.FormValue("username")
+		password := r.FormValue("password")
+		if username == "" || password == "" {
 			//做一些登陆不通过的事
 			fmt.Println("登陆失败")
 			fmt.Fprint(w, "登陆失败")
 			return
 		}
 
-		//调用rpc服务，设置token，存储到redis
-		var settoken func(user model.User) (string, error)
-		RpcService(conn, "SetToken", &settoken)
-		tk, err := settoken(u)
+		//从pool中拿连接
+		conn, err := pool.Get()
 		if err != nil {
-			log.Println("连接redis错误")
+			log.Printf("err:%v\n", err)
+			return
 		}
+
+		//调用rpc服务，backend验证用户名和密码
+		var reqData = make(map[string]string)
+		reqData["username"] = username
+		reqData["password"] = password
+		rspData, err := RpcService(conn, "Authenticate", reqData)
+		if err != nil {
+			if _, ok := err.(net.Error); ok {
+				// 直接关闭conn，不放回pool
+				log.Println("invaild conn")
+				conn.(*easypool.PoolConn).MarkUnusable()
+				conn.Close()
+			} else {
+				//做一些登陆不通过的事
+				log.Println("登陆失败")
+				fmt.Fprint(w, "登陆失败")
+				conn.Close()
+				return
+			}
+		}
+
+		// 判断状态码
+		if rspData["code"] != "0" {
+			//做一些登陆不通过的事
+			fmt.Println("登陆失败")
+			fmt.Fprint(w, "登陆失败")
+			conn.Close()
+			return
+		}
+
+		// 调用rpc服务，设置token
+		userid := rspData["userid"]
+		reqData = make(map[string]string)
+		reqData["userid"] = userid
+		reqData["username"] = username
+		rspData, err = RpcService(conn, "SetToken", reqData)
+		if err != nil {
+			if _, ok := err.(net.Error); ok {
+				// 直接关闭conn，不放回pool
+				log.Println("invaild conn")
+				conn.(*easypool.PoolConn).MarkUnusable()
+				conn.Close()
+			} else {
+				//做一些登陆不通过的事
+				log.Println("登陆失败")
+				fmt.Fprint(w, "登陆失败")
+				conn.Close()
+				return
+			}
+		}
+
+		// cookie设置token
+		tk := rspData["token"]
 		w.Header().Set("Set-Cookie", "Token:"+tk)
 
 		//设置重定向
 		w.Header().Set("Location", "/userhome")//跳转地址设置
 		w.WriteHeader(302)
+		conn.Close()
 	}
 }
 
@@ -115,31 +153,51 @@ func userhome(w http.ResponseWriter, r *http.Request) {
 			log.Printf("err:%v\n", err)
 			return
 		}
-		defer conn.Close()
+
 		// 调用Rpc服务，验证tk，确认用户是否登陆
-		var verify func(tk string) (model.User, int)
-		RpcService(conn, "VerifyToken", &verify)
-		user, ok := verify(tk)
-		if ok == 1 {
+		var reqData = make(map[string]string)
+		reqData["token"] = tk
+		rspData, err := RpcService(conn, "VerifyToken", reqData)
+		if err != nil {
+			if _, ok := err.(net.Error); ok {
+				// 直接关闭conn，不放回pool
+				log.Println("invaild conn")
+				conn.(*easypool.PoolConn).MarkUnusable()
+				conn.Close()
+			} else {
+				//做一些登陆不通过的事
+				log.Println("登陆失败")
+				fmt.Fprint(w, "登陆失败")
+				conn.Close()
+				return
+			}
+		}
+
+		// 判断状态码
+		code := rspData["code"]
+		if code != "0"{
 			//未登陆
 			fmt.Fprintf(w, "unauthorized")
-			return
-		} else if ok == 2 {
-			log.Printf("数据库错误")
+			conn.Close()
 			return
 		}
 
+
 		//登陆成功
-		log.Printf("User log in: %+v", user)
+		username := rspData["username"]
+		nickname := rspData["nickname"]
+		log.Printf("User log in: username=%v nickname=%v", username, nickname)
 
 		// 构造待补充的信息
-		var detail = htmlDetail{Nickname: user.Nickname, ImgUrl: user.Username}
+		var detail = htmlDetail{Nickname: nickname, ImgUrl: username}
 
 		// 解析html
 		var tpath = filepath.Join(conf.StaticPath, "userhome.html")
 		t, _ := template.ParseFiles(tpath)
 		// 补充昵称
 		t.Execute(w, detail)
+		//conn放回pool
+		conn.Close()
 		return
 	} else {
 		if r.Header["Content-Type"][0] == "application/x-www-form-urlencoded" {
@@ -167,21 +225,34 @@ func userhome(w http.ResponseWriter, r *http.Request) {
 			}
 
 			//调用rpc服务
-			var change func(tk string, name string) int
-			RpcService(conn, "ChangeNickname", &change)
-			ok := change(tk, nickname)
-			defer conn.Close()
-
-			if ok == 1{
-				log.Println("db error")
+			var reqData = make(map[string]string)
+			reqData["nickname"] = nickname
+			reqData["token"] = tk
+			rspData, err := RpcService(conn, "ChangeNickname", reqData)
+			if err != nil {
+				if _, ok := err.(net.Error); ok {
+					// 直接关闭conn，不放回pool
+					log.Println("invaild conn")
+					conn.(*easypool.PoolConn).MarkUnusable()
+					conn.Close()
+				} else {
+					//做一些登陆不通过的事
+					log.Println("登陆失败")
+					fmt.Fprint(w, "登陆失败")
+					conn.Close()
+					return
+				}
 			}
-			if ok == 2 {
-				log.Println("查无此人")
+
+			// 判断状态码
+			if rspData["code"] != "0" {
+				log.Println("修改昵称失败")
 			}
 
 			//设置重定向
 			w.Header().Set("Location", "/userhome")//跳转地址设置
 			w.WriteHeader(302)
+			conn.Close()
 			return
 
 		}
@@ -209,22 +280,39 @@ func userhome(w http.ResponseWriter, r *http.Request) {
 			log.Printf("err:%v\n", err)
 			return
 		}
-		defer conn.Close()
+
 		// 调用Rpc服务，验证tk，确认用户是否登陆
-		var verify func(tk string) (model.User, int)
-		RpcService(conn, "VerifyToken", &verify)
-		user, ok := verify(tk)
-		if ok == 1 {
+		var reqData = make(map[string]string)
+		reqData["token"] = tk
+		rspData, err := RpcService(conn, "VerifyToken", reqData)
+		if err != nil {
+			if _, ok := err.(net.Error); ok {
+				// 直接关闭conn，不放回pool
+				log.Println("invaild conn")
+				conn.(*easypool.PoolConn).MarkUnusable()
+				conn.Close()
+			} else {
+				//做一些登陆不通过的事
+				log.Println("登陆失败")
+				fmt.Fprint(w, "登陆失败")
+				conn.Close()
+				return
+			}
+		}
+
+		// 判断状态码
+		code := rspData["code"]
+		if code != "0"{
 			//未登陆
 			fmt.Fprintf(w, "unauthorized")
-			return
-		} else if ok == 2 {
-			log.Printf("数据库错误")
+			conn.Close()
 			return
 		}
 
+		username := rspData["username"]
+
 		format := strings.Split(handler.Filename, ".")
-		filename := user.Username + "." + format[len(format)-1]
+		filename := username + "." + format[len(format)-1]
 
 		dirname := filepath.Join(conf.MediaPath, filename) //路径和文件名拼接
 		f, err := os.OpenFile(dirname, os.O_WRONLY|os.O_CREATE, 0666) //打开目标文件等待写入，这里后期把文件名换成用户名相关的
@@ -234,6 +322,7 @@ func userhome(w http.ResponseWriter, r *http.Request) {
 		}
 		defer f.Close()
 		io.Copy(f, file)
+		conn.Close()
 	}
 }
 
@@ -259,11 +348,7 @@ func showImg(w http.ResponseWriter, r *http.Request) {
 
 // 主页
 func index(w http.ResponseWriter, r *http.Request) {
-	conn, _ := pool.Get()
-	var s func() string
-	RpcService(conn, "number", &s)
-	var i = s()
-	fmt.Fprintf(w, i)
+	fmt.Fprint(w, "hello")
 }
 
 // 打印格式
@@ -272,10 +357,11 @@ func HttpLog(method string, path string, addr string) {
 }
 
 // 调用rpc的服务
-func RpcService(conn net.Conn, funcname string, fpoint interface{}) {
+func RpcService(conn net.Conn, funcname string, inArgs map[string]string) (map[string]string, error) {
 	// 创客户端
 	client := rpc.NewClient(conn)
 	// 定义函数调用原型
 	// 客户端调用rpc
-	client.RpcCall(funcname, fpoint)
+	outArgs, err := client.RpcCall(funcname, inArgs)
+	return outArgs, err
 }

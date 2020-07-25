@@ -20,8 +20,8 @@ func init() {
 	if err != nil {
 		log.Fatal("connection to mysql failed:", err)
 	}
-	db.SetMaxOpenConns(3000)
-	db.SetMaxIdleConns(2000)
+	db.SetMaxOpenConns(1000)
+	db.SetMaxIdleConns(500)
 	db.Ping()
 }
 
@@ -48,35 +48,40 @@ func (u *UserDao) Close() error {
 
 // 根据User的Id查
 func (u *UserDao) UserQueryById(user *model.User) (int, error) {
-	row := u.DB.QueryRow("select username,password,nickname from users where id=?", user.Id)
+	rows, err := u.DB.Query("select username,password,nickname from users where id=?", user.Id)
 	//row.scan中的字段必须是按照数据库存入字段的顺序，否则报错
 	//传入的是user结构体的成员的地址
-	if err := row.Scan(&user.Username, &user.Password, &user.Nickname); err != nil {
-		if err == sql.ErrNoRows {
-			//查不到数据
+	if err != nil {
+		return 2, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		if err := rows.Scan(&user.Username, &user.Password, &user.Nickname); err != nil {
 			return 1, err
-		} else {
-			//其他问题
-			return 2, err
 		}
 	}
-	log.Printf("%+v", user)
+	if err := rows.Err(); err != nil {
+		return 2, err
+	}
 	return 0, nil
 }
 
 // 根据User的username查
 func (u *UserDao) UserQueryByName(user *model.User) (int, error) {
-	row := u.DB.QueryRow("select id,password,nickname from users where username=?", user.Username)
+	rows, err := u.DB.Query("select id,password,nickname from users where username=?", user.Username)
 	//row.scan中的字段必须是按照数据库存入字段的顺序，否则报错
 	//传入的是user结构体的成员的地址
-	if err := row.Scan(&user.Id, &user.Password, &user.Nickname); err != nil {
-		if err == sql.ErrNoRows {
-			//查不到数据
+	if err != nil {
+		return 2, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		if err := rows.Scan(&user.Id, &user.Password, &user.Nickname); err != nil {
 			return 1, err
-		} else {
-			//其他问题
-			return 2, err
 		}
+	}
+	if err := rows.Err(); err != nil {
+		return 2, err
 	}
 	return 0, nil
 }

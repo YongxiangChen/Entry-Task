@@ -5,82 +5,111 @@ import (
 	"entrytask1/tcpserver/model"
 	"entrytask1/tcpserver/token"
 	"log"
+	"strconv"
 )
 
-// 验证用户名和密码
-func Authenticate(username string, password string) (model.User, bool) {
+// 验证用户名和密码,返回code错误码
+// reqData{"username", "password"}
+// rspData{"userid", "code"}
+func Authenticate(reqData map[string]string) map[string]string {
 	userdb := dao.NewUserDB()
 	//defer userdb.Close()
 
 	//先根据用户名查出有无用户
-	var user = &model.User{Username: username}
+	var user = &model.User{Username: reqData["username"]}
 	ok, err := userdb.UserQueryByName(user)
+	var rspData = make(map[string]string)
 	if err != nil {
 		if ok == 1 {
 			//运行正常，查无此人
-			return model.User{} ,false
+			rspData["code"] = "1"
+			rspData["userid"] = "-1"
+			return rspData
 		} else {
 			//运行异常
+			rspData["code"] = "2"
+			rspData["userid"] = "-1"
 			log.Println("mysql error!")
-			return model.User{} ,false
+			log.Println(err)
+			return rspData
 		}
 	}
 	//查到了用户，对比密码是否一致
-	if password != user.Password {
-		return model.User{}, false
+	if reqData["password"] != user.Password {
+		rspData["code"] = "3"
+		rspData["userid"] = "-1"
+		return rspData
 	}
 
-	return *user, true
+	rspData["userid"] = strconv.Itoa(user.Id)
+	rspData["code"] = "0"
+	return rspData
 }
 
 
 
 //存储token到redis并且返回token值
-func SetToken(user model.User) (string, error) {
-	tk := token.GetToken(user.Username)
+// reqData{"username", "userid"}
+// rspData{"token"}
+func SetToken(reqData map[string]string) map[string]string {
+	tk := token.GetToken(reqData["username"])
+	userid, _ := strconv.Atoi(reqData["userid"])
 	auth := model.Auth{
 		Token: tk,
-		Userid: user.Id,
+		Userid: userid,
 	}
 	client := dao.NewRedisClient()
 	defer client.Close()
-	err := client.SetValueRedis(&auth)
-	if err != nil {
-		return "", err
-	}
+	client.SetValueRedis(&auth)
 
-	return tk, nil
+	rspData := make(map[string]string)
+	rspData["token"] = tk
+	return rspData
 }
 
-// 修改用户昵称
-func ChangeNickname(tk string, name string) int {
+// 修改用户昵称, 返回0是正常，返回1是连接redis错误， 返回2是查不到键
+// reqData{"nickname", "token"}
+// rspData{"code"}
+func ChangeNickname(reqData map[string]string) map[string]string {
 	client := dao.NewRedisClient()
-	auth := model.Auth{Token: tk}
+	auth := model.Auth{Token: reqData["token"]}
 	ok, _ := client.GetValueRedis(&auth)
+	var rspData = make(map[string]string)
 	if ok != 0 {
-		return ok
+		rspData["code"] = strconv.Itoa(ok)
+		return rspData
 	}
-	user := model.User{Id: auth.Userid, Nickname: name}
+	user := model.User{Id: auth.Userid, Nickname: reqData["nickname"]}
 	userDB := dao.NewUserDB()
 	ok, _ = userDB.UserUpdateById(&user)
-	return ok
+	rspData["code"] = strconv.Itoa(ok)
+	return rspData
 }
 
-//验证token，返回user对象
-func VerifyToken(tk string) (model.User, int) {
+//验证token，返回nickname, username, 错误码(1用户登陆问题，2数据库错误，0正常)
+// reqData{"token"}
+// rspData{"nickname", "username", "code"}
+func VerifyToken(reqData map[string]string) map[string]string {
 	client := dao.NewRedisClient()
-	auth := model.Auth{Token: tk}
+	auth := model.Auth{Token: reqData["token"]}
 	ok, err := client.GetValueRedis(&auth)
 	defer client.Close()
+	rspData := make(map[string]string)
 	switch ok {
 	case 1:
 		//找不到token，未登陆
+		rspData["nickname"] = ""
+		rspData["username"] = ""
+		rspData["code"] = "1"
 		log.Println("未登陆:, ", err)
-		return model.User{}, 1
+		return rspData
 	case 2:
 		//redis连接错误
+		rspData["nickname"] = ""
+		rspData["username"] = ""
+		rspData["code"] = "2"
 		log.Println("redis error: ", err)
-		return model.User{}, 2
+		return rspData
 	}
 
 	user := model.User{Id: auth.Userid}
@@ -90,12 +119,21 @@ func VerifyToken(tk string) (model.User, int) {
 	switch ok {
 	case 1:
 		//找不到user，id不匹配
+		rspData["nickname"] = ""
+		rspData["username"] = ""
+		rspData["code"] = "1"
 		log.Println("找不到user:, ", err)
-		return model.User{}, 1
+		return rspData
 	case 2:
 		//mysql连接错误
+		rspData["nickname"] = ""
+		rspData["username"] = ""
+		rspData["code"] = "2"
 		log.Println("mysql error: ", err)
-		return model.User{}, 2
+		return rspData
 	}
-	return user, 0
+	rspData["nickname"] = user.Nickname
+	rspData["username"] = user.Username
+	rspData["code"] = "0"
+	return rspData
 }

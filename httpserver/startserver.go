@@ -1,15 +1,16 @@
 package main
 
 import (
-	"encoding/gob"
 	"entrytask1/httpserver/server"
-	"entrytask1/tcpserver/model"
 	"log"
 	"net/http"
+	_ "net/http/pprof"
 )
 
 func main() {
-	gob.Register(model.User{})
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
 	mux := &server.MyMux{}
 	err := http.ListenAndServe(":8001", mux)
 	if err != nil {

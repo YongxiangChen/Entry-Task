@@ -3,25 +3,22 @@ package rpc
 import (
 	"log"
 	"net"
-	"reflect"
 )
 
 type Server struct {
 	addr string //连接地址
-	funcs map[string]reflect.Value //健是函数名，值是reflect.ValueOf(fn)，其中fn是注册的函数
+	funcMap map[string]func(map[string]string) map[string]string
 }
 
 func NewServer(addr string) *Server {
-	return &Server{addr:addr, funcs:make(map[string]reflect.Value)}
+	return &Server{addr:addr, funcMap: make(map[string]func(map[string]string) map[string]string)}
 }
 
-// 注册函数
-func (s *Server) Register(name string, fn interface{}) {
-	if _, ok := s.funcs[name]; ok {
-		// 这个函数已经添加过了
+func (s *Server) Register(name string, fn func(map[string]string) map[string]string) {
+	if _, ok := s.funcMap[name]; ok {
 		return
 	}
-	s.funcs[name] = reflect.ValueOf(fn)
+	s.funcMap[name] = fn
 }
 
 
@@ -53,36 +50,24 @@ func handelConn(conn net.Conn, s *Server) {
 			return
 		}
 		// 把数据解码，成为Rpcdata类型
-		rpcdata, err := Decode(bytedata)
+		reqData, err := Decode(bytedata)
 		if err != nil {
-			log.Println("解码异常")
 			return
 		}
-		// 从映射中找到函数，它是reflect.Value类型
-		fn, ok := s.funcs[rpcdata.Name]
-		if !ok {
-			log.Println("函数找不到")
+
+		var rspData RpcData
+		rspData.FuncName = reqData.FuncName
+		// 调用方法
+		if _, ok := s.funcMap[reqData.FuncName]; !ok {
 			return
 		}
-		// 将入参转换为reflect.Value类型，然后放入[]reflect.Value中
-		inArgs := make([]reflect.Value, 0, len(rpcdata.Args))
-		for _, v := range rpcdata.Args {
-			inArgs = append(inArgs, reflect.ValueOf(v))
-		}
-		// 调用函数，返回的是[]reflect.Value
-		returnData := fn.Call(inArgs)
-		log.Printf("调用函数 %q 成功!", rpcdata.Name)
-		// 构造RpcData的Args成员数据
-		outArgs := make([]interface{}, 0, len(returnData))
-		for _, rv := range returnData {
-			outArgs = append(outArgs, rv.Interface())
-		}
-		// 构造RpcData
-		rspdata := RpcData{Name: rpcdata.Name, Args: outArgs}
+		fn := s.funcMap[reqData.FuncName]
+		outArgs := fn(reqData.Args)
+		rspData.Args = outArgs
+
 		// 编码
-		bytedata, err = Encode(rspdata)
+		bytedata, err = Encode(rspData)
 		if err != nil {
-			log.Println("编码失败")
 			return
 		}
 		// 发送数据
